@@ -16,7 +16,9 @@ const USAGE = `wfsync <command>
   overview            everyone at a glance
   snapshot [--full] [--peek]
                       room post for the current state (prints nothing if unchanged)
-  ingest [file]       apply WFSYNC v1 blocks from a file or stdin, rewrite Remote.lua
+  ingest [--author H] [file]
+                      apply WFSYNC v1 blocks from a file or stdin, rewrite Remote.lua;
+                      with --author, reject blocks for anyone but H's person
   remote              rewrite WFSync_Data/Remote.lua
   watch               print one line each time SavedVariables/WFSync.lua changes`;
 
@@ -34,8 +36,10 @@ try {
       break;
     }
     case 'ingest': {
+      const i = args.indexOf('--author');
+      const author = i >= 0 ? args.splice(i, 2)[1] : undefined;
       const text = fs.readFileSync(args[0] ?? 0, 'utf8');
-      print(ingest(text));
+      print(ingest(text, { author }));
       break;
     }
     case 'remote': print(writeRemote()); break;

@@ -109,15 +109,23 @@ export function extractSnapshots(text) {
   return out;
 }
 
-// Applies every WFSYNC block in `text`. Returns per-handle results; needFull lists
-// handles whose deltas had a seq gap (ask them for `full`).
-export function ingest(text, { writeRemote: write = true } = {}) {
+// The person behind a room author: `lois` posts as lois, `AddonBuilder@lois` as lois.
+export const personOf = author => author.split('@').pop();
+
+// Applies every WFSYNC block in `text`. Returns per-handle results; need_full marks
+// handles whose deltas had a seq gap (ask them for `full`). With `author` (the room
+// handle that posted `text`), blocks claiming to be another person are rejected.
+export function ingest(text, { author, writeRemote: write = true } = {}) {
   const players = loadPlayers();
   const results = [];
   const me = myHandle();
   for (const s of extractSnapshots(text)) {
     if (s.v !== SCHEMA || typeof s.handle !== 'string' || !Number.isInteger(s.seq)) {
       results.push({ handle: s.handle ?? null, status: 'ignored', why: 'bad header' });
+      continue;
+    }
+    if (author && personOf(author) !== s.handle) {
+      results.push({ handle: s.handle, status: 'rejected', why: `posted by ${author}, not by ${s.handle} or their agent` });
       continue;
     }
     if (s.handle === me) { results.push({ handle: s.handle, status: 'ignored', why: 'own snapshot' }); continue; }
@@ -146,7 +154,15 @@ export function ingest(text, { writeRemote: write = true } = {}) {
 
 // ---------- WFSync_Data add-on ----------
 
-const TOC = `## Interface: 11507
+// Same Interface number as the installed WFSync add-on, so both change together.
+function interfaceVersion() {
+  if (process.env.WFSYNC_INTERFACE) return process.env.WFSYNC_INTERFACE;
+  const main = path.join(dataAddonDir(), '..', 'WFSync', 'WFSync.toc');
+  const m = fs.existsSync(main) && /^## Interface:\s*([\d, ]+)$/m.exec(fs.readFileSync(main, 'utf8'));
+  return m ? m[1].trim() : '11507';
+}
+
+const tocText = () => `## Interface: ${interfaceVersion()}
 ## Title: WFSync Data
 ## Notes: Written by the WFSync companion
 Remote.lua
@@ -156,7 +172,8 @@ export function writeRemote(players = loadPlayers()) {
   const dir = dataAddonDir();
   fs.mkdirSync(dir, { recursive: true });
   const toc = path.join(dir, 'WFSync_Data.toc');
-  if (!fs.existsSync(toc)) fs.writeFileSync(toc, TOC);
+  const want = tocText();
+  if (!fs.existsSync(toc) || fs.readFileSync(toc, 'utf8') !== want) writeAtomic(toc, want);
   const remote = { schema: SCHEMA, generated: Math.floor(Date.now() / 1000), players: {} };
   for (const [handle, p] of Object.entries(players)) {
     const completed = {};
