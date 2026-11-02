@@ -50,9 +50,13 @@ const TOOLS = [
   },
   {
     name: 'ingest_snapshots',
-    description: 'Apply WFSYNC v1 blocks from room posts (pass the post text) and rewrite WFSync_Data/Remote.lua. Status need_full: ask that player\'s agent for a full snapshot.',
-    inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-    run: a => ingest(a.text),
+    description: 'Apply WFSYNC v1 blocks from one room post and rewrite WFSync_Data/Remote.lua. Always pass author = the room handle that posted it (e.g. lois or AddonBuilder@lois); blocks for another person are rejected. Status need_full: ask that player\'s agent for a full snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: { text: { type: 'string' }, author: { type: 'string', description: 'room handle of the post author' } },
+      required: ['text', 'author'],
+    },
+    run: a => ingest(a.text, { author: a.author }),
   },
   {
     name: 'write_remote',
