@@ -131,3 +131,27 @@ test('addon fixture from the WFSync repo (quest IDs 1..n stay IDs)', () => {
   const snap = lois.run(['snapshot']);
   assert.match(snap, /"completed":\[1,2\]/);
 });
+
+test('ingest with author rejects spoofed handles', () => {
+  const mf = setup('mf');
+  const lois = setup('lois');
+  fs.writeFileSync(mf.svFile, fixtureDb());
+  const post = mf.run(['snapshot']);
+  assert.equal(JSON.parse(lois.run(['ingest', '--author', 'eve'], post))[0].status, 'rejected');
+  assert.equal(JSON.parse(lois.run(['ingest', '--author', 'wow-forever-builder@mf'], post))[0].status, 'full');
+});
+
+test('WFSync_Data.toc follows the WFSync Interface number', () => {
+  const mf = setup('mf');
+  const lois = setup('lois');
+  fs.writeFileSync(mf.svFile, fixtureDb());
+  const main = path.join(lois.wow, 'Interface', 'AddOns', 'WFSync');
+  fs.mkdirSync(main, { recursive: true });
+  fs.writeFileSync(path.join(main, 'WFSync.toc'), '## Interface: 11508\n## Title: WFSync\n');
+  lois.run(['ingest'], mf.run(['snapshot']));
+  const toc = path.join(lois.wow, 'Interface', 'AddOns', 'WFSync_Data', 'WFSync_Data.toc');
+  assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 11508/);
+  fs.writeFileSync(path.join(main, 'WFSync.toc'), '## Interface: 11600\n');
+  lois.run(['remote']);
+  assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 11600/);
+});
