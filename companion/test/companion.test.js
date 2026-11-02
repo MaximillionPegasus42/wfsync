@@ -151,7 +151,7 @@ test('WFSync_Data.toc follows the WFSync Interface number', () => {
   lois.run(['ingest'], mf.run(['snapshot']));
   const toc = path.join(lois.wow, 'Interface', 'AddOns', 'WFSync_Data', 'WFSync_Data.toc');
   assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 11508/);
-  fs.writeFileSync(path.join(main, 'WFSync.toc'), '## Interface: 11600\n');
+  fs.writeFileSync(path.join(main, 'WFSync.toc'), '## Interface: 11600\r\n## Title: WFSync\r\n');
   lois.run(['remote']);
-  assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 11600/);
+  assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 11600\n/, 'CRLF TOC is read too');
 });
