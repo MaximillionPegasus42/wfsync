@@ -129,6 +129,6 @@ export function suggest(handle = myHandle(), { with: only } = {}) {
       ideas: dungeonsFor(party.map(p => p.level), me.faction),
       recent: lastDungeons.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 5),
     },
-    note: 'Dungeon level ranges are Classic Era guide values. Quest zones come from quest_accept events and may be missing.',
+    note: 'Dungeon level ranges are Classic Era guide values. Quest zones are where someone accepted the quest (not where its goal is) and may be missing. pick_up can hold class quests or follow-ups that need an earlier quest first.',
   };
 }
