@@ -155,3 +155,63 @@ test('WFSync_Data.toc follows the WFSync Interface number', () => {
   lois.run(['remote']);
   assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 11600\n/, 'CRLF TOC is read too');
 });
+
+test('sync through a shared folder, newest updated wins, quests add up', () => {
+  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'wfsync-shared-'));
+  const mf = setup('mf');
+  const lois = setup('lois');
+  fs.writeFileSync(mf.svFile, fixtureDb({ level: 23, completed: [100, 101] }));
+  fs.writeFileSync(lois.svFile, fixtureDb({ level: 30 }));
+
+  const a = JSON.parse(mf.run(['sync', '--dir', shared]));
+  assert.equal(a.own, 'written');
+  assert.deepEqual(a.players, []);
+  assert.equal(JSON.parse(mf.run(['sync'])).own, 'unchanged', '--dir is remembered');
+
+  const b = JSON.parse(lois.run(['sync', '--dir', shared]));
+  assert.deepEqual(b.players.map(p => [p.handle, p.status, p.level]), [['mf', 'updated', 23]]);
+  const remote = fs.readFileSync(path.join(lois.wow, 'Interface', 'AddOns', 'WFSync_Data', 'Remote.lua'), 'utf8');
+  assert.match(remote, /\tmf = \{/);
+  assert.equal(JSON.parse(lois.run(['status', 'mf'])).level, 23);
+
+  // A newer room snapshot beats an older file; the file's quests still count.
+  const post = mf.run(['snapshot', '--full', '--peek']).replace('"updated":1793000000', '"updated":1793009999')
+    .replace('"level":23', '"level":24').replace('"completed":[100,101]', '"completed":[100,102]');
+  lois.run(['ingest'], post);
+  const c = JSON.parse(lois.run(['sync']));
+  assert.equal(c.players[0].status, 'kept newer');
+  assert.equal(JSON.parse(lois.run(['status', 'mf'])).level, 24);
+  assert.equal(JSON.parse(lois.run(['status', 'mf'])).quests_completed, 3);
+});
+
+test('sync ignores files whose handle does not match the name', () => {
+  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'wfsync-shared-'));
+  const lois = setup('lois');
+  fs.writeFileSync(lois.svFile, fixtureDb());
+  fs.writeFileSync(path.join(shared, 'eve.json'), JSON.stringify({ v: 1, handle: 'mf', full: true, level: 60 }));
+  const r = JSON.parse(lois.run(['sync', '--dir', shared]));
+  assert.deepEqual(r.players.map(p => [p.handle, p.status]), [['eve', 'ignored']]);
+});
+
+test('sync pulls and pushes a git checkout', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wfsync-git-'));
+  const g = (...a) => execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  g('init', '-q', '--bare', '-b', 'main', path.join(root, 'hub.git'));
+  for (const who of ['mf', 'lois']) {
+    g('clone', '-q', path.join(root, 'hub.git'), path.join(root, who));
+    g('-C', path.join(root, who), 'config', 'user.name', who);
+    g('-C', path.join(root, who), 'config', 'user.email', `${who}@example.com`);
+  }
+  const mf = setup('mf');
+  const lois = setup('lois');
+  fs.writeFileSync(mf.svFile, fixtureDb({ level: 23 }));
+  fs.writeFileSync(lois.svFile, fixtureDb({ level: 30 }));
+  const a = JSON.parse(mf.run(['sync', '--dir', path.join(root, 'mf')]));
+  assert.equal(a.git.push, 'ok');
+  const b = JSON.parse(lois.run(['sync', '--dir', path.join(root, 'lois')]));
+  assert.equal(b.git.pull, 'ok');
+  assert.equal(b.git.push, 'ok');
+  assert.deepEqual(b.players.map(p => [p.handle, p.level]), [['mf', 23]]);
+  const c = JSON.parse(mf.run(['sync']));
+  assert.deepEqual(c.players.map(p => [p.handle, p.level]), [['lois', 30]]);
+});

@@ -34,6 +34,20 @@ mf: Lvl 24 (1 %) · Ashenvale / Astranaar · +2 Quests
 
 `full: true` carries `completed` (all quest IDs); deltas carry `completed_add`. `seq` increases by one per post; a gap means the receiver needs a full snapshot.
 
+## Without an agent: `wfsync sync`
+
+For players without an agent or r00ms. Pick a folder the group shares: Dropbox, iCloud Drive, Syncthing, a network share, or a clone of a **private** git repo. Then, once:
+
+```bash
+node bin/wfsync.js sync --dir "/path/to/shared/folder" --handle mf
+```
+
+Every run writes your state to `<handle>.json` in that folder, reads everybody else's file, and rewrites `Remote.lua`. In a git checkout it pulls first and pushes your file afterwards. `--dir` and `--handle` are remembered (`~/.wfsync/config.json`), so after that a double-click on `WFSync Sync.command` (macOS) or `WFSync Sync.bat` (Windows) is enough. `sync --watch` keeps running and syncs after each logout or `/reload`, plus every 5 minutes.
+
+The same rules hold for every path a state takes (room, shared folder, add-on): the state with the newest `updated` (set by the player's own client) wins, and completed quests add up.
+
+The files are plain JSON with character, realm, guild, gold and position. Nothing is encrypted or signed: anyone who can write the folder can change anyone's file. Use a folder only your group can reach.
+
 ## MCP tools
 
 `get_status`, `recent_events` (type `quest_turnin` = recent quests), `completed_quest_ids`, `session_log`, `quest_status`, `group_overview`, `make_snapshot`, `ingest_snapshots`, `write_remote`.
