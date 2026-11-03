@@ -5,6 +5,7 @@ import { makeSnapshot, ingest, writeRemote } from '../src/sync.js';
 import { sync } from '../src/shared.js';
 import { savedVariablesFile, wowDir, dataAddonDir, myHandle, sharedDir, saveConfig } from '../src/paths.js';
 import * as q from '../src/query.js';
+import { suggest } from '../src/suggest.js';
 
 const [cmd, ...args] = process.argv.slice(2);
 const flag = f => args.includes(f);
@@ -16,6 +17,7 @@ const USAGE = `wfsync <command>
   paths               show which WoW folder / files are used
   status [handle]     player status as JSON
   overview            everyone at a glance
+  suggest [handle]    quests to do together, friends nearby, fitting dungeons
   snapshot [--full] [--peek]
                       room post for the current state (prints nothing if unchanged)
   ingest [--author H] [file]
@@ -36,6 +38,7 @@ try {
       break;
     case 'status': print(q.status(args[0])); break;
     case 'overview': print(q.overview()); break;
+    case 'suggest': print(suggest(args[0])); break;
     case 'snapshot': {
       const s = makeSnapshot({ full: flag('--full'), commit: !flag('--peek') });
       if (s.changed || flag('--peek')) print(s.text);

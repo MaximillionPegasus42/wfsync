@@ -2,6 +2,7 @@
 import readline from 'node:readline';
 import { makeSnapshot, ingest, writeRemote } from './sync.js';
 import * as q from './query.js';
+import { suggest } from './suggest.js';
 
 const handleArg = { handle: { type: 'string', description: 'r00ms person handle (e.g. mf, lois); default: this player' } };
 
@@ -41,6 +42,15 @@ const TOOLS = [
     description: 'Everyone at a glance: level, XP %, zone, level range, and quests that sit in more than one quest log.',
     inputSchema: { type: 'object', properties: {} },
     run: () => q.overview(),
+  },
+  {
+    name: 'suggest',
+    description: 'What to do next, from the group\'s own data: quests in your log that friends have too (together), quests friends are on that you could pick up (pick_up), friends in your zone at a similar level (nearby), who lags behind (behind), and dungeons that fit you plus everyone near your level. Use it to propose plans to the players.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...handleArg, with: { type: 'array', items: { type: 'string' }, description: 'only consider these handles' } },
+    },
+    run: a => suggest(a.handle, { with: a.with }),
   },
   {
     name: 'make_snapshot',

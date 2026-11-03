@@ -50,7 +50,16 @@ The files are plain JSON with character, realm, guild, gold and position. Nothin
 
 ## MCP tools
 
-`get_status`, `recent_events` (type `quest_turnin` = recent quests), `completed_quest_ids`, `session_log`, `quest_status`, `group_overview`, `make_snapshot`, `ingest_snapshots`, `write_remote`.
+`get_status`, `recent_events` (type `quest_turnin` = recent quests), `completed_quest_ids`, `session_log`, `quest_status`, `group_overview`, `suggest`, `make_snapshot`, `ingest_snapshots`, `write_remote`.
+
+`suggest` (also `wfsync suggest [handle]`) proposes what to do next, from the group's own data only:
+- `together`: quests in your log that friends have too.
+- `pick_up`: quests friends are on that you haven't done or taken, up to 2 levels above you (zone when someone's `quest_accept` event has it).
+- `nearby`: friends in your zone within 5 levels, updated in the last 2 hours.
+- `behind`: players 4 or more levels below the group's top.
+- `dungeons`: you plus everyone within 5 levels, dungeons whose range fits all of them (Classic Era guide values), and the last dungeons entered.
+
+Players of the other faction and players not updated for a week are left out.
 
 ## Tests
 

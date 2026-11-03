@@ -8,23 +8,26 @@ import { parseSavedVariables, toLua } from '../src/lua.js';
 
 const BIN = new URL('../bin/wfsync.js', import.meta.url).pathname;
 
-function fixtureDb({ level = 23, xp = 4120, completed = [100, 101], zone = 'Ashenvale' } = {}) {
+const DEFAULT_LOG = '[1250] = { ["title"] = "Bounty", ["accepted"] = 1792990000 }';
+
+function fixtureDb({ level = 23, xp = 4120, completed = [100, 101], zone = 'Ashenvale', updated = 1793000000, log = DEFAULT_LOG, events = '', faction = 'Horde' } = {}) {
   return `
 WFSync_DB = {
 	["schema"] = 1,
 	["chars"] = {
 		["Zitzenmelkee-Spineshatter"] = {
-			["updated"] = 1793000000,
-			["class"] = "WARRIOR", ["race"] = "Orc", ["faction"] = "Horde",
+			["updated"] = ${updated},
+			["class"] = "WARRIOR", ["race"] = "Orc", ["faction"] = "${faction}",
 			["level"] = ${level}, ["xp"] = ${xp}, ["xpMax"] = 9800, ["rested"] = 1200,
 			["zone"] = "${zone}", ["subzone"] = "Astranaar \\"Ost\\"", ["mapID"] = 1440,
 			["pos"] = { ["x"] = 0.412, ["y"] = 0.633 },
 			["money"] = 154321,
 			["completed"] = { ${completed.map(id => `[${id}] = true`).join(', ')} },
-			["log"] = { [1250] = { ["title"] = "Bounty", ["accepted"] = 1792990000 } },
+			["log"] = { ${log} },
 			["events"] = {
 				{ ["t"] = 1792999000, ["type"] = "quest_turnin", ["id"] = 101, ["title"] = "Wolves", ["zone"] = "Ashenvale" },
 				{ ["t"] = 1792999500, ["type"] = "levelup", ["level"] = ${level} }, -- comment
+				${events}
 			},
 			["sessions"] = { { ["start"] = 1792990000, ["stop"] = 1793000000, ["xpGained"] = 9000, ["levelFrom"] = 22, ["levelTo"] = ${level} } },
 		},
@@ -248,4 +251,45 @@ test('flavor folder: newest WFSync.lua wins, beta folders included, ranked last 
   fs.utimesSync(path.join(acc('_classic_era_'), 'WFSync.lua'), old, old);
   fs.writeFileSync(path.join(acc('_classic_beta_'), 'WFSync.lua'), fixtureDb());
   assert.equal(path.basename(wow()), '_classic_beta_', 'the folder WFSync wrote last wins');
+});
+
+test('suggest: quests together, quests to pick up, friends nearby, gaps, dungeons', () => {
+  const fresh = Math.floor(Date.now() / 1000) - 600;
+  const q = (id, title, level) => `[${id}] = { ["title"] = "${title}", ["level"] = ${level} }`;
+  const mf = setup('mf');
+  const lois = setup('lois');
+  const bob = setup('bob');
+  fs.writeFileSync(mf.svFile, fixtureDb({ level: 23, updated: fresh, log: [q(1250, 'Bounty', 24), q(1300, 'Owls', 22)].join(', ') }));
+  fs.writeFileSync(lois.svFile, fixtureDb({
+    level: 25, updated: fresh, completed: [100],
+    log: [q(1250, 'Bounty', 24), q(1400, 'Naga', 24), q(1500, 'Too high', 30), q(101, 'Done already', 20)].join(', '),
+    events: '{ ["t"] = 1792999600, ["type"] = "quest_accept", ["id"] = 1400, ["title"] = "Naga", ["zone"] = "Ashenvale" },',
+  }));
+  fs.writeFileSync(bob.svFile, fixtureDb({ level: 17, updated: fresh, zone: 'Durotar', log: '' }));
+  mf.run(['ingest'], lois.run(['snapshot']));
+  mf.run(['ingest'], bob.run(['snapshot']));
+
+  const s = JSON.parse(mf.run(['suggest']));
+  assert.deepEqual(s.together.map(x => [x.id, x.with]), [[1250, ['lois']]]);
+  assert.deepEqual(s.pick_up.map(x => [x.id, x.zone, x.on]), [[1400, 'Ashenvale', ['lois']]], 'too high and already done are left out');
+  assert.deepEqual(s.nearby.map(x => x.handle), ['lois']);
+  assert.deepEqual(s.behind, [{ handle: 'bob', level: 17, behind: 8 }]);
+  assert.deepEqual(s.dungeons.party, ['mf', 'lois']);
+  assert.deepEqual(s.dungeons.ideas.map(d => d.name), ['The Deadmines', 'Shadowfang Keep', 'Blackfathom Deeps']);
+});
+
+test('suggest leaves out the other faction and stale players', () => {
+  const fresh = Math.floor(Date.now() / 1000) - 600;
+  const mf = setup('mf');
+  const eve = setup('eve');
+  const old = setup('old');
+  fs.writeFileSync(mf.svFile, fixtureDb({ updated: fresh }));
+  fs.writeFileSync(eve.svFile, fixtureDb({ updated: fresh, faction: 'Alliance' }));
+  fs.writeFileSync(old.svFile, fixtureDb({ updated: fresh - 30 * 86400 }));
+  mf.run(['ingest'], eve.run(['snapshot']));
+  mf.run(['ingest'], old.run(['snapshot']));
+  const s = JSON.parse(mf.run(['suggest']));
+  assert.deepEqual(s.together, []);
+  assert.deepEqual(s.nearby, []);
+  assert.deepEqual(s.dungeons.party, ['mf']);
 });
