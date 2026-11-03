@@ -234,3 +234,18 @@ test('sync handle must not be . or ..', () => {
   fs.writeFileSync(mf.svFile, fixtureDb());
   assert.throws(() => mf.run(['sync', '--dir', shared, '--handle', '..'], undefined), /not a plain name/);
 });
+
+test('flavor folder: newest WFSync.lua wins, beta folders included, ranked last otherwise', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wfsync-root-'));
+  const acc = flavor => path.join(root, flavor, 'WTF', 'Account', 'ACC1', 'SavedVariables');
+  for (const f of ['_classic_era_', '_classic_beta_']) fs.mkdirSync(acc(f), { recursive: true });
+  const env = { ...process.env, WFSYNC_WOW_ROOT: root, WFSYNC_HOME: path.join(root, 'state') };
+  delete env.WFSYNC_WOW_DIR;
+  const wow = () => JSON.parse(execFileSync('node', [BIN, 'paths'], { env, encoding: 'utf8' })).wow;
+  assert.equal(path.basename(wow()), '_classic_era_', 'no WFSync.lua anywhere: beta ranks last');
+  fs.writeFileSync(path.join(acc('_classic_era_'), 'WFSync.lua'), fixtureDb());
+  const old = new Date(Date.now() - 60000);
+  fs.utimesSync(path.join(acc('_classic_era_'), 'WFSync.lua'), old, old);
+  fs.writeFileSync(path.join(acc('_classic_beta_'), 'WFSync.lua'), fixtureDb());
+  assert.equal(path.basename(wow()), '_classic_beta_', 'the folder WFSync wrote last wins');
+});

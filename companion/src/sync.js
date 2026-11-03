@@ -180,7 +180,7 @@ function interfaceVersion() {
   if (process.env.WFSYNC_INTERFACE) return process.env.WFSYNC_INTERFACE;
   const main = path.join(dataAddonDir(), '..', 'WFSync', 'WFSync.toc');
   const m = fs.existsSync(main) && /^## Interface:\s*([\d, ]+?)\s*$/m.exec(fs.readFileSync(main, 'utf8'));
-  return m ? m[1].trim() : '11507';
+  return m ? m[1].trim() : '11509, 16001';
 }
 
 const tocText = () => `## Interface: ${interfaceVersion()}

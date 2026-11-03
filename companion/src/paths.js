@@ -4,13 +4,16 @@ import path from 'node:path';
 
 // Where things live. Everything can be overridden with env vars:
 //   WFSYNC_WOW_DIR   game flavor dir, e.g. /Applications/World of Warcraft/_classic_era_
+//   WFSYNC_WOW_ROOT  World of Warcraft folder to search instead of the usual places
 //   WFSYNC_ACCOUNT   WTF account folder name
 //   WFSYNC_HOME      companion state dir (default ~/.wfsync)
 //   WFSYNC_HANDLE    this player's r00ms person handle, e.g. mf
 //   WFSYNC_SHARED    folder for `wfsync sync` (also saved in ~/.wfsync/config.json)
 // Without WFSYNC_WOW_DIR / WFSYNC_ACCOUNT we pick the flavor + account whose
 // SavedVariables/WFSync.lua was written most recently, falling back to the
-// newest account of the first flavor found.
+// newest account of the first flavor found. WoW Forever's launch folder name is
+// not known yet (its beta was _classic_beta_), so every _*_ folder counts;
+// ptr/beta folders only rank last when nothing has written WFSync.lua yet.
 
 const WOW_ROOTS = [
   '/Applications/World of Warcraft',
@@ -18,17 +21,21 @@ const WOW_ROOTS = [
   'C:\\Program Files\\World of Warcraft',
 ];
 
-const PREFERRED_FLAVORS = ['_forever_', '_classic_era_', '_classic_'];
+const PREFERRED_FLAVORS = ['_forever_', '_camelot_', '_classic_era_', '_classic_'];
 
 function flavorDirs() {
   const out = [];
-  for (const root of WOW_ROOTS) {
+  for (const root of process.env.WFSYNC_WOW_ROOT ? [process.env.WFSYNC_WOW_ROOT] : WOW_ROOTS) {
     if (!fs.existsSync(root)) continue;
     for (const d of fs.readdirSync(root, { withFileTypes: true })) {
-      if (d.isDirectory() && /^_.+_$/.test(d.name) && !/_ptr_|_beta_/.test(d.name)) out.push(path.join(root, d.name));
+      if (d.isDirectory() && /^_.+_$/.test(d.name)) out.push(path.join(root, d.name));
     }
   }
-  const rank = p => { const i = PREFERRED_FLAVORS.indexOf(path.basename(p)); return i < 0 ? 99 : i; };
+  const rank = p => {
+    const name = path.basename(p);
+    const i = PREFERRED_FLAVORS.indexOf(name);
+    return i >= 0 ? i : /ptr|beta/.test(name) ? 100 : 99;
+  };
   return out.sort((a, b) => rank(a) - rank(b));
 }
 
