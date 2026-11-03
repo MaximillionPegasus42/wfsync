@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { SCHEMA, ownBody, loadPlayers, savePlayers, mergePlayer, writeRemote, writeAtomic } from './sync.js';
 import { myHandle, sharedDir } from './paths.js';
 
-const HANDLE = /^[\w.-]{1,64}$/;
+const HANDLE = /^[\w-][\w.-]{0,63}$/;
 
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const isGit = dir => fs.existsSync(path.join(dir, '.git'));
@@ -58,17 +58,29 @@ export function sync({ dir = sharedDir(), write = true } = {}) {
   savePlayers(players);
   if (write) out.remote = writeRemote(players);
 
-  if (out.git && out.own === 'written') {
+  // Decided from the repo, not from `own`: a commit or push that failed once is
+  // retried on the next run even though the file itself is unchanged by then.
+  if (out.git) {
+    const rel = `${handle}.json`;
+    let step = 'commit';
     try {
-      git(dir, 'add', '--', `${handle}.json`);
-      git(dir, 'commit', '-q', '-m', `wfsync: ${handle}`, '--', `${handle}.json`);
-      git(dir, 'push', '-q');
-      out.git.push = 'ok';
+      if (git(dir, 'status', '--porcelain', '--', rel).trim()) {
+        git(dir, 'add', '--', rel);
+        git(dir, 'commit', '-q', '-m', `wfsync: ${handle}`, '--', rel);
+        out.git.commit = 'ok';
+      }
+      step = 'push';
+      if (unpushed(dir)) { git(dir, 'push', '-q'); out.git.push = 'ok'; }
     } catch (e) {
-      out.git.push = gitError(e);
+      out.git[step] = gitError(e);
     }
   }
   return out;
+}
+
+// Commits the upstream lacks; without an upstream (or with an empty repo) always push.
+function unpushed(dir) {
+  try { return Number(git(dir, 'rev-list', '--count', '@{u}..HEAD').trim()) > 0; } catch { return true; }
 }
 
 const gitError = e => `failed: ${(e.stderr || e.message).trim().split('\n').pop()}`;

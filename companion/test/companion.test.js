@@ -214,4 +214,23 @@ test('sync pulls and pushes a git checkout', () => {
   assert.deepEqual(b.players.map(p => [p.handle, p.level]), [['mf', 23]]);
   const c = JSON.parse(mf.run(['sync']));
   assert.deepEqual(c.players.map(p => [p.handle, p.level]), [['lois', 30]]);
+
+  // A failed push is retried on the next run, although the file is unchanged by then.
+  fs.writeFileSync(mf.svFile, fixtureDb({ level: 24 }));
+  g('-C', path.join(root, 'mf'), 'remote', 'set-url', 'origin', path.join(root, 'gone.git'));
+  const d = JSON.parse(mf.run(['sync']));
+  assert.equal(d.own, 'written');
+  assert.match(d.git.push, /^failed/);
+  g('-C', path.join(root, 'mf'), 'remote', 'set-url', 'origin', path.join(root, 'hub.git'));
+  const e = JSON.parse(mf.run(['sync']));
+  assert.equal(e.own, 'unchanged');
+  assert.equal(e.git.push, 'ok');
+  assert.equal(JSON.parse(lois.run(['sync'])).players[0].level, 24);
+});
+
+test('sync handle must not be . or ..', () => {
+  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'wfsync-shared-'));
+  const mf = setup('mf');
+  fs.writeFileSync(mf.svFile, fixtureDb());
+  assert.throws(() => mf.run(['sync', '--dir', shared, '--handle', '..'], undefined), /not a plain name/);
 });
