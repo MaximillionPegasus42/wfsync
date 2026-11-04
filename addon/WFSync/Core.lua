@@ -1,7 +1,7 @@
 -- WFSync Core: Namespace, Event-Verteilung, Datenbank, Hilfsfunktionen.
 local ADDON, ns = ...
 
-ns.VERSION = "0.1.0"
+ns.VERSION = "0.2.0"
 ns.SCHEMA = 1
 ns.MAX_EVENTS = 500
 ns.MAX_SESSIONS = 100

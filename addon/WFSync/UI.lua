@@ -143,6 +143,9 @@ local function personLines(p)
     p.name, tostring(p.level or "?"), ns.XPPercent(p.xp, p.xpMax), loc)
   local when = p.online and "|cff40ff40online|r" or ("|cff888888" .. ns.Ago(p.updated) .. "|r")
   local line2 = "   " .. when
+  if p.via and not p.online then
+    line2 = line2 .. "|cff888888 (über " .. ns.ShortName(p.via) .. ")|r"
+  end
   if p.lastQuest and p.lastQuest.title then
     line2 = line2 .. "|cff888888  ·  zuletzt: " .. p.lastQuest.title .. "|r"
   end
@@ -155,7 +158,7 @@ local function createWindow()
   if not ok or not w then
     w = CreateFrame("Frame", "WFSyncWindow", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
   end
-  w:SetSize(420, 70 + MAX_ROWS * 34)
+  w:SetSize(420, 86 + MAX_ROWS * 34)
   w:SetPoint("CENTER")
   w:SetFrameStrata("DIALOG")
   w:SetMovable(true)
@@ -179,6 +182,14 @@ local function createWindow()
     b:SetJustifyH("LEFT")
     w.rows[i] = { a, b }
   end
+  w.footer = w:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  w.footer:SetPoint("BOTTOM", 0, 10)
+  w.offset = 0
+  w:EnableMouseWheel(true)
+  w:SetScript("OnMouseWheel", function(self, delta)
+    self.offset = self.offset - delta
+    ns.RefreshWindow()
+  end)
   w.empty = w:CreateFontString(nil, "OVERLAY", "GameFontDisable")
   w.empty:SetPoint("CENTER")
   w.empty:SetText("Noch keine Mitspieler bekannt.\nGruppe/Gilde mit WFSync oder Companion-Daten nötig.")
@@ -189,8 +200,10 @@ end
 function ns.RefreshWindow()
   if not window or not window:IsShown() then return end
   local people = ns.People()
+  local maxOffset = math.max(0, #people - MAX_ROWS)
+  window.offset = math.max(0, math.min(window.offset or 0, maxOffset))
   for i = 1, MAX_ROWS do
-    local row, p = window.rows[i], people[i]
+    local row, p = window.rows[i], people[i + window.offset]
     if p then
       local l1, l2 = personLines(p)
       row[1]:SetText(l1)
@@ -201,6 +214,17 @@ function ns.RefreshWindow()
     end
   end
   if #people == 0 then window.empty:Show() else window.empty:Hide() end
+  local online = 0
+  for _, p in ipairs(people) do if p.online then online = online + 1 end end
+  local footer = string.format("%d Mitspieler · %d online", #people, online)
+  if maxOffset > 0 then
+    footer = footer .. string.format("  ·  %d–%d, Mausrad zum Blättern",
+      window.offset + 1, math.min(#people, window.offset + MAX_ROWS))
+  end
+  if IsInInstance and IsInInstance() then
+    footer = footer .. "\n|cffff8800In Instanzen ist Live-Sync evtl. gesperrt, Stand kommt nach dem Verlassen.|r"
+  end
+  window.footer:SetText(footer)
 end
 
 function ns.ToggleWindow()
@@ -270,10 +294,26 @@ SlashCmdList["WFSYNC"] = function(msg)
     local lines = ns.QuestStatusLines(id)
     if #lines == 0 then ns.Print("Keine Mitspieler bekannt.") end
     for _, line in ipairs(lines) do ns.Print(line) end
+  elseif cmd == "share" or cmd == "teilen" then
+    local aliases = { gruppe = "group", gilde = "guild", aus = "off" }
+    local mode = aliases[rest:lower()] or rest:lower()
+    local labels = {
+      guild = "Gruppe und Gilde (inkl. Weitergabe an Gildenmitglieder)",
+      group = "nur Gruppe/Raid",
+      off = "niemand",
+    }
+    if ns.SHARE_MODES[mode] then
+      ns.db.settings.share = mode
+      if mode ~= "off" then ns.SendHello(true) end
+    elseif rest ~= "" then
+      ns.Print("Nutzung: /wf share guild|group|off")
+      return
+    end
+    ns.Print("Teilen mit: %s", labels[ns.ShareMode()])
   elseif cmd == "debug" then
     ns.db.settings.debug = not ns.db.settings.debug
     ns.Print("Debug %s", ns.db.settings.debug and "an" or "aus")
   else
-    ns.Print("/wf – Fenster · /wf sync · /wf status · /wf quest <id> · /wf debug")
+    ns.Print("/wf – Fenster · /wf sync · /wf status · /wf quest <id> · /wf share guild|group|off · /wf debug")
   end
 end

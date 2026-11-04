@@ -14,16 +14,19 @@ function Bus:advance(seconds, step)
   local target = self.clock + seconds
   while self.clock < target do
     self.clock = self.clock + step
-    for _, client in ipairs(self.clients) do client:tick(step) end
+    for _, client in ipairs(self.clients) do
+      if not client.offline then client:tick(step) end
+    end
   end
 end
 
 function Bus:deliver(from, prefix, text, channel, target)
+  if from.offline then return end
   assert(#text <= 255, "Addon-Message zu lang: " .. #text)
   assert(not text:find("\0", 1, true), "Nullbyte in Addon-Message")
   table.insert(self.sent, { from = from.name, text = text, channel = channel, target = target })
   for _, c in ipairs(self.clients) do
-    if c ~= from and c.prefixes[prefix] then
+    if c ~= from and not c.offline and c.prefixes[prefix] then
       local ok = false
       if channel == "PARTY" or channel == "RAID" then
         ok = from.world.group ~= nil and c.world.group == from.world.group
@@ -166,12 +169,25 @@ function M.NewClient(bus, name, world)
     end
   end
 
+  env.Enum = { SendAddonMessageResult = { Success = 0, AddonMessageThrottle = 3, ChannelThrottle = 8 } }
   env.C_Timer = {
     After = function(d, fn) table.insert(c.timers, { at = bus.clock + d, fn = fn }) end,
   }
   env.C_ChatInfo = {
     RegisterAddonMessagePrefix = function(p) c.prefixes[p] = true end,
-    SendAddonMessage = function(p, text, channel, target) bus:deliver(c, p, text, channel, target) end,
+    -- Kontingent wie im echten Client: 10 pro Prefix, +1 pro Sekunde; darüber Code 3
+    SendAddonMessage = function(p, text, channel, target)
+      local now = bus.clock
+      c.allowance = math.min(10, (c.allowance or 10) + (now - (c.allowanceAt or now)))
+      c.allowanceAt = now
+      if c.allowance < 1 then
+        c.throttled = (c.throttled or 0) + 1
+        return 3
+      end
+      c.allowance = c.allowance - 1
+      bus:deliver(c, p, text, channel, target)
+      return 0
+    end,
   }
   env.C_Map = {
     GetBestMapForUnit = function() return world.mapID end,
@@ -210,6 +226,16 @@ function M.NewClient(bus, name, world)
   env.GetGuildInfo = function() return world.guild end
   env.IsInGroup = function() return world.group ~= nil end
   env.IsInRaid = function() return false end
+  env.UnitInParty = function(n)
+    if not world.group then return false end
+    for _, other in ipairs(bus.clients) do
+      if (other.name == n or other.name .. "-" .. other.world.realm == n) and other.world.group == world.group then
+        return true
+      end
+    end
+    return false
+  end
+  env.UnitInRaid = function() return nil end
   env.GetRealZoneText = function() return world.zone end
   env.GetSubZoneText = function() return world.subzone or "" end
   env.GetNormalizedRealmName = function() return world.realm end

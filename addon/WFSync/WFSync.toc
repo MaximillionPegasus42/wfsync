@@ -1,8 +1,8 @@
-## Interface: 11507
+## Interface: 11509, 16001
 ## Title: WFSync
 ## Notes: Teilt Level, XP, Zone und Quests mit deiner Gruppe und euren r00ms-Agents.
 ## Author: AddonBuilder (r00ms) für lois & mf
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: WFSync_DB
 ## OptionalDeps: WFSync_Data
 

@@ -46,7 +46,6 @@ function ns.People()
     end
   end
 
-  local now = time()
   for charKey, live in pairs(ns.db and ns.db.peers or {}) do
     if charKey ~= selfKey then
       local person = byChar[charKey]
@@ -59,12 +58,13 @@ function ns.People()
         for _, f in ipairs(STATUS_FIELDS) do
           if live[f] ~= nil then person[f] = live[f] end
         end
+        person.via = live.via or nil -- Name dessen, der den Stand weitergegeben hat
       end
       if live.completed then table.insert(person.completedSets, live.completed) end
       if live.lastQuest and (not person.lastQuest or (live.lastQuest.t or 0) > (person.lastQuest.t or 0)) then
         person.lastQuest = live.lastQuest
       end
-      person.online = (now - (live.lastSeen or 0)) < ONLINE_WINDOW
+      person.online = ns.IsOnline(live)
     end
   end
 
@@ -97,8 +97,13 @@ function ns.QuestStatus(questID)
   return out
 end
 
--- Live-Daten eines Mitspielers aktualisieren (aus Sync.lua)
-function ns.UpdatePeer(charKey, fields)
+function ns.IsOnline(peer)
+  return peer ~= nil and (time() - (peer.lastSeen or 0)) < ONLINE_WINDOW
+end
+
+-- Live-Daten eines Mitspielers aktualisieren (aus Sync.lua).
+-- relayed=true: Stand kam über einen Dritten, der Spieler selbst war nicht da.
+function ns.UpdatePeer(charKey, fields, relayed)
   if not ns.db then return nil end
   local peer = ns.db.peers[charKey]
   if not peer then
@@ -106,7 +111,21 @@ function ns.UpdatePeer(charKey, fields)
     ns.db.peers[charKey] = peer
   end
   for k, v in pairs(fields) do peer[k] = v end
-  peer.lastSeen = time()
+  if not relayed then
+    peer.lastSeen = time()
+    peer.seenAt = peer.lastSeen
+  end
   ns.Fire("PEERS_CHANGED", charKey)
   return peer
 end
+
+-- Uralte Einträge (z. B. Gildenmitglieder, die aufgehört haben) beim Laden entfernen
+local PRUNE_AGE = 90 * 86400
+ns.Listen("DB_READY", function()
+  local now = time()
+  for charKey, peer in pairs(ns.db.peers) do
+    if type(peer) ~= "table" or now - math.max(peer.updated or 0, peer.seenAt or 0, peer.lastSeen or 0) > PRUNE_AGE then
+      ns.db.peers[charKey] = nil
+    end
+  end
+end)

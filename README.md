@@ -19,15 +19,27 @@ WoW-Client ── WFSync (Lua) ──► SavedVariables/WFSync.lua ──► com
 
 ## Ingame
 
-- **`/wf`**: Fenster mit allen Mitspielern (Level, XP %, Zone, online oder „vor X Std“, letzte Quest)
+- **`/wf`**: Fenster mit allen Mitspielern: Level, XP %, Zone, online oder „vor X Std“, letzte Quest. Zuerst stehen alle, die online sind. Bei mehr als 10 Leuten blättert man mit dem Mausrad, unten steht die Zahl der Mitspieler und wie viele online sind.
 - **Questlog und Quest-Dialog**: Seitenpanel mit Status pro Mitspieler (erledigt, im Questlog, offen)
 - **Quest-Links im Chat**: Tooltip mit demselben Status
 - **Login**: Hinweis wie „mf: Level 20 → 23, zuletzt in Silberwald (vor 3 Std)“
+- **Weitergabe über die Gilde**: Wer gerade online ist, gibt den letzten Stand von Gildenmitgliedern weiter, die offline sind. So sieht man mf auch dann, wenn man nie gleichzeitig mit mf online war. Im Fenster steht dann „(über Name)“.
+- **`/wf share guild|group|off`** (auch `gilde|gruppe|aus`): mit wem du teilst. `guild` (Standard): Gruppe und Gilde, inklusive Weitergabe. `group`: nur Gruppe oder Raid, wird nicht weitergegeben. `off`: nur empfangen.
 - `/wf sync` · `/wf status` · `/wf quest <id>` · `/wf debug`
+
+### Ohne Agent und ohne r00ms
+
+Das Add-on allein reicht schon. Live sieht man alle in Gruppe und Gilde, die WFSync haben. Für Offline-Stände sorgt die Weitergabe über die Gilde. Agent und Companion kommen nur dazu, wenn man Vorschläge und den Austausch außerhalb der Gilde will.
+
+Welcher Stand gewinnt? Jeder Stand trägt `updated`. Das ist der Zeitpunkt der letzten Änderung, gesetzt vom Client des Spielers selbst. Für Level, XP und Zone gewinnt der höchste Wert, egal ob er live, über die Gilde oder per `Remote.lua` kam. Abgeschlossene Quests aus allen Quellen werden zusammengeführt. Weitergegebenes überschreibt nie Neueres und wird nicht angenommen, solange die Person selbst online ist.
 
 ## Installation (Add-on)
 
-`addon/WFSync` nach `World of Warcraft/_<flavor>_/Interface/AddOns/WFSync` kopieren oder symlinken. `WFSync_Data` legt der Companion selbst an. Solange Forever keine eigene Interface-Nummer hat: im Add-on-Menü „Veraltete Add-ons laden“ anhaken.
+`addon/WFSync` nach `World of Warcraft/_<flavor>_/Interface/AddOns/WFSync` kopieren oder symlinken. `WFSync_Data` legt der Companion selbst an.
+
+Die TOC enthält `## Interface: 11509, 16001` (Classic Era und, laut Fan-Guides, WoW Forever, offiziell noch nicht bestätigt). Lädt das Add-on nicht:
+1. Im Spiel `/dump select(4, GetBuildInfo())` ausführen und die Zahl im Room posten. Wir tragen sie in `addon/WFSync/WFSync.toc` ein, der Companion übernimmt sie für `WFSync_Data`.
+2. Bis dahin im Add-on-Menü „Veraltete Add-ons laden“ anhaken.
 
 ## Tests
 
@@ -91,12 +103,21 @@ Regeln: Unbekannte Felder werden ignoriert. Bei Breaking Changes steigt `schema`
 | Nachricht | Bedeutung |
 |---|---|
 | `H^1` | Hallo, bitte schick deinen Status (Antwort per Whisper) |
-| `S^1^lvl^xp^xpMax^mapID^x^y^updated^completedCount^zone^subzone` | Status |
-| `R^1` | bitte schick deine abgeschlossenen Quests |
+| `S^1^lvl^xp^xpMax^mapID^x^y^updated^completedCount^zone^subzone^share` | Status (`share`: `g` darf weitergegeben werden, `p` nur Gruppe) |
+| `R^1^g?` | bitte schick deine abgeschlossenen Quests (`g`: dein Status kam bei mir über die Gilde an). Kommen innerhalb von 3 s mehrere Anfragen mit `g`, wird einmal über die Gilde geantwortet statt jedem einzeln. |
 | `C^1^seq^i^n^id,id,…` | Teil i von n der abgeschlossenen Quests |
 | `T^1^questID^title` | Quest gerade abgegeben |
+| `P^1^char^share^seenAt^lvl^xp^xpMax^mapID^x^y^updated^completedCount^zone^subzone` | weitergegebener Stand von `char` (Antwort auf `H` in der Gilde, höchstens 15, nicht älter als 30 Tage) |
+| `Q^1^char` | bitte schick mir die abgeschlossenen Quests von `char` |
+| `K^1^char^seq^i^n^id,id,…` | Teil i von n der Quests von `char`. Wird nur vom Absender des übernommenen `P` angenommen. |
 
-Jede Nachricht hat höchstens 255 Byte. Gesendet wird gedrosselt mit 5 Nachrichten pro Sekunde. Status-Updates werden 10 s entprellt.
+Weitergegebene Daten sind nicht signiert: Wer WFSync in der Gilde hat, könnte falsche Stände schicken. Für eine Freundesgruppe ist das in Ordnung. Wer das nicht will, nutzt `/wf share group`.
+
+Jede Nachricht hat höchstens 255 Byte. Status-Updates werden 10 s entprellt.
+
+Drosselung: Der Client erlaubt pro Prefix ein Kontingent von etwa 10 Nachrichten, das sich mit etwa 1 pro Sekunde auffüllt. Was darüber hinausgeht, verwirft er still. WFSync bleibt mit einem eigenen Kontingent darunter (8 Nachrichten auf einmal, dann 1 pro Sekunde). Meldet der Client trotzdem eine Drosselung, wird die Nachricht bis zu 5-mal wiederholt.
+
+In Instanzen ist Addon-Kommunikation in Forever möglicherweise gesperrt. Das `/wf`-Fenster zeigt dann einen Hinweis, und nach dem Verlassen schickt WFSync einmal ein Hallo.
 
 ## Offene Punkte
 

@@ -253,6 +253,177 @@ test("Login-Hinweis zeigt Fortschritt seit dem letzten Mal", function()
   eq(#loisNS.LoginDigest(), 0, "zweiter Aufruf ohne Neues")
 end)
 
+---------------------------------------------------------------------------
+-- Weitergabe über die Gilde: Anna ist offline, Bert hat sie gesehen, Carla loggt ein
+---------------------------------------------------------------------------
+local gbus = mock.NewBus()
+local anna = mock.NewClient(gbus, "Anna", {
+  level = 31, xp = 100, xpMax = 20000, zone = "Desolace", subzone = "Ghost Walker Post",
+  mapID = 1443, x = 0.5, y = 0.6, guild = "Gilde",
+  completed = manyCompleted(80, 2000), -- erzwingt mehrere K-Teile
+})
+local bert = mock.NewClient(gbus, "Bert", { level = 25, xp = 0, xpMax = 10000, zone = "Steinkrallen", guild = "Gilde", group = "g2" })
+local ella = mock.NewClient(gbus, "Ella", { level = 26, xp = 0, xpMax = 10000, zone = "Steinkrallen", guild = "Gilde", group = "g2" })
+local carla = mock.NewClient(gbus, "Carla", { level = 12, xp = 0, xpMax = 3000, zone = "Mulgore", guild = "Gilde" })
+local annaNS = mock.LoadAddon(anna, ADDON_DIR, FILES)
+local bertNS = mock.LoadAddon(bert, ADDON_DIR, FILES)
+mock.LoadAddon(ella, ADDON_DIR, FILES)
+local carlaNS = mock.LoadAddon(carla, ADDON_DIR, FILES)
+mock.Login(anna, nil)
+mock.Login(bert, nil)
+mock.Login(ella, { settings = { share = "group" } })
+gbus:advance(20)
+
+test("Teilen nur mit Gruppe: Gildenmitglied außerhalb der Gruppe sieht nichts", function()
+  local bertPeers = bert.env.WFSync_DB.peers
+  eq(bertPeers["Ella-Forever"].share, "p", "Ella bei Bert (Gruppe)")
+  eq(bertPeers["Anna-Forever"].share, "g", "Anna bei Bert")
+  eq(anna.env.WFSync_DB.peers["Ella-Forever"], nil, "Ella bei Anna")
+  for _, m in ipairs(gbus.sent) do
+    if m.from == "Ella" and m.channel == "GUILD" then eq(m.text, "H^1", "Ella auf GUILD") end
+  end
+end)
+
+anna.offline, ella.offline = true, true
+gbus:advance(400)
+mock.Login(carla, nil)
+gbus:advance(20)
+
+test("Weitergabe: Carla bekommt Annas Stand und Quests über Bert", function()
+  local peer = carla.env.WFSync_DB.peers["Anna-Forever"]
+  assert(peer, "Anna fehlt bei Carla")
+  eq(peer.level, 31, "level")
+  eq(peer.zone, "Desolace", "zone")
+  eq(peer.via, "Bert-Forever", "via")
+  eq(carlaNS.CountKeys(peer.completed), 80, "completed")
+  has(table.concat(carlaNS.QuestStatusLines(2042), "\n"), "Anna")
+  has(table.concat(carlaNS.QuestStatusLines(2042), "\n"), "erledigt")
+  local k = 0
+  for _, m in ipairs(gbus.sent) do
+    assert(#m.text <= 255)
+    if m.text:sub(1, 2) == "K^" then k = k + 1 end
+  end
+  assert(k >= 2, "erwartet mehrere K-Teile, bekommen " .. k)
+end)
+
+test("Weitergabe: nur Gilden-Teiler, Anzeige mit „über Bert“", function()
+  eq(carla.env.WFSync_DB.peers["Ella-Forever"], nil, "Ella (nur Gruppe) darf nicht weitergegeben werden")
+  local annaPerson
+  for _, p in ipairs(carlaNS.People()) do if p.char == "Anna-Forever" then annaPerson = p end end
+  assert(annaPerson, "Anna nicht in People()")
+  eq(annaPerson.online, false, "online")
+  local _, line2 = carlaNS.PersonLines(annaPerson)
+  has(line2, "über Bert")
+end)
+
+local function inject(client, from, text)
+  client:fire("CHAT_MSG_ADDON", "WFSync", text, "WHISPER", from)
+end
+
+test("Weitergabe: veraltete, eigene und fremde Daten werden abgelehnt", function()
+  local peers = carla.env.WFSync_DB.peers
+  inject(carla, "Mallory-Forever", "P^1^Anna-Forever^g^1^60^0^1^1^^^1^0^Alt^")
+  eq(peers["Anna-Forever"].level, 31, "älterer Stand überschreibt nicht")
+  inject(carla, "Mallory-Forever", "P^1^Carla-Forever^g^1^60^0^1^1^^^" .. (gbus.clock + 10) .. "^0^X^")
+  eq(peers["Carla-Forever"], nil, "Stand über mich selbst")
+  inject(carla, "Mallory-Forever", "P^1^Zoe-Forever^p^1^60^0^1^1^^^" .. (gbus.clock - 10) .. "^0^X^")
+  eq(peers["Zoe-Forever"], nil, "nur-Gruppe-Stand")
+  inject(carla, "Mallory-Forever", "K^1^Anna-Forever^1^1^1^1,2,3")
+  eq(carlaNS.CountKeys(peers["Anna-Forever"].completed), 80, "Quests von jemand anderem als via")
+end)
+
+test("Weitergabe: K-Teile addieren sich zu bekannten Quests", function()
+  inject(carla, "Bert-Forever", "K^1^Anna-Forever^777^1^1^9001")
+  local done = carla.env.WFSync_DB.peers["Anna-Forever"].completed
+  eq(carlaNS.CountKeys(done), 81, "80 + 1")
+  eq(done[2042], true, "alte Quest noch da")
+  eq(done[9001], true, "neue Quest")
+end)
+
+test("Direkter Kontakt ersetzt weitergegebenen Stand", function()
+  anna.offline = false
+  annaNS.SendHello(true)
+  gbus:advance(5)
+  local peer = carla.env.WFSync_DB.peers["Anna-Forever"]
+  eq(peer.via, false, "via gelöscht")
+  eq(carlaNS.IsOnline(peer), true, "online")
+end)
+
+test("/wf share off: nur noch Hallo, keine eigenen Daten", function()
+  carla:slash("share aus")
+  eq(carla.env.WFSync_DB.settings.share, "off")
+  local before = #gbus.sent
+  carlaNS.SendHello(true)
+  inject(carla, "Bert-Forever", "R^1")
+  gbus:advance(10)
+  for i = before + 1, #gbus.sent do
+    local m = gbus.sent[i]
+    if m.from == "Carla" then eq(m.text, "H^1", "Carla sendet") end
+  end
+  carla:slash("share guild")
+  eq(carlaNS.ShareMode(), "guild")
+end)
+
+test("/wf-Fenster blättert bei mehr als 10 Mitspielern", function()
+  for i = 1, 14 do
+    carlaNS.UpdatePeer(string.format("Gast%02d-Forever", i), { level = 10 + i, updated = gbus.clock - i }, true)
+  end
+  carla:slash("")
+  local w = carla.env.WFSyncWindow
+  assert(w and w.shown, "Fenster nicht offen")
+  has(w.footer.text, "16 Mitspieler")
+  has(w.footer.text, "Mausrad")
+  local first = w.rows[1][1].text
+  w.scripts.OnMouseWheel(w, -1)
+  assert(w.rows[1][1].text ~= first, "erste Zeile nach dem Blättern unverändert")
+  for _ = 1, 20 do w.scripts.OnMouseWheel(w, -1) end
+  eq(w.offset, 6, "Offset am Ende begrenzt")
+  has(w.rows[10][1].text, "Lvl")
+end)
+
+test("Instanz-Hinweis im /wf-Fenster", function()
+  carla.world.instanceType = "party"
+  carlaNS.RefreshWindow()
+  has(carla.env.WFSyncWindow.footer.text, "Instanzen")
+  carla.world.instanceType = nil
+  carlaNS.RefreshWindow()
+  assert(not carla.env.WFSyncWindow.footer.text:find("Instanzen"), "Hinweis bleibt nach Instanz")
+end)
+
+test("Drosselung: 1500 Quests in vielen Teilen kommen vollständig an, ohne Client-Drossel", function()
+  gbus:advance(10) -- offene Nachrichten der anderen erst abarbeiten
+  local dora = mock.NewClient(gbus, "Dora", {
+    level = 40, xp = 0, xpMax = 50000, zone = "Tanaris", guild = "Gilde",
+    completed = manyCompleted(1500, 5000),
+  })
+  local doraNS = mock.LoadAddon(dora, ADDON_DIR, FILES)
+  mock.Login(dora, nil)
+  gbus:advance(90)
+  local peer = carla.env.WFSync_DB.peers["Dora-Forever"]
+  assert(peer and peer.completed, "Dora fehlt bei Carla")
+  eq(carlaNS.CountKeys(peer.completed), 1500, "alle Quests")
+  eq(dora.throttled or 0, 0, "eigene Drossel bleibt unter dem Client-Kontingent")
+  eq(doraNS.SendQueueLength(), 0, "Queue leer")
+  local chunks, guildChunks = 0, 0
+  for _, m in ipairs(gbus.sent) do
+    if m.from == "Dora" and m.text:sub(1, 2) == "C^" then
+      chunks = chunks + 1
+      if m.channel == "GUILD" then guildChunks = guildChunks + 1 end
+    end
+  end
+  eq(chunks, guildChunks, "mehrere Anfragen gleichzeitig: einmal über die Gilde statt pro Person")
+  assert(chunks >= 20 and chunks <= 45, "Anzahl C-Teile " .. chunks)
+  eq(bert.env.WFSync_DB.peers["Dora-Forever"] and bertNS.CountKeys(bert.env.WFSync_DB.peers["Dora-Forever"].completed), 1500, "Bert auch")
+
+  -- Client drosselt trotzdem (z. B. anderes Add-on hat das Kontingent verbraucht): nichts geht verloren
+  dora.allowance, dora.allowanceAt = 0, gbus.clock
+  dora.world.completed[9999] = true
+  dora:fire("QUEST_TURNED_IN", 9999, 0, 0)
+  gbus:advance(5)
+  assert((dora.throttled or 0) > 0, "Client-Drossel nicht ausgelöst")
+  eq(carla.env.WFSync_DB.peers["Dora-Forever"].completed[9999], true, "T-Nachricht nach Drossel angekommen")
+end)
+
 -- Beispiel-Datei für den Companion schreiben
 os.execute("mkdir -p tests/fixtures/SavedVariables")
 local f = assert(io.open("tests/fixtures/SavedVariables/WFSync.lua", "w"))
