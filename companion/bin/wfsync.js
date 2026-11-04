@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import { serve } from '../src/mcp.js';
 import { makeSnapshot, ingest, writeRemote } from '../src/sync.js';
 import { sync } from '../src/shared.js';
-import { savedVariablesFile, wowDir, dataAddonDir, myHandle, sharedDir, saveConfig } from '../src/paths.js';
+import { syncServer, serverUrl, checkServer, AuthError } from '../src/web.js';
+import { savedVariablesFile, wowDir, dataAddonDir, myHandle, sharedDir, saveConfig, loadConfig } from '../src/paths.js';
 import * as q from '../src/query.js';
 import { suggest } from '../src/suggest.js';
 
@@ -24,17 +25,21 @@ const USAGE = `wfsync <command>
                       apply WFSYNC v1 blocks from a file or stdin, rewrite Remote.lua;
                       with --author, reject blocks for anyone but H's person
   remote              rewrite WFSync_Data/Remote.lua
-  sync [--dir D] [--handle H] [--watch]
+  sync [--dir D | --server URL] [--handle H] [--watch]
                       without r00ms: swap state through shared folder D (Dropbox,
-                      iCloud, git checkout, ...), rewrite Remote.lua; --dir and
-                      --handle are remembered; --watch repeats after each logout
+                      iCloud, git checkout, ...) or the web app at URL, rewrite
+                      Remote.lua; --dir/--server and --handle are remembered;
+                      --watch repeats after each logout and every 5 minutes
+  token               read the web app token from stdin and remember it
+  share gold|pos on|off
+                      let the web app see your gold / position (default off)
   watch               print one line each time SavedVariables/WFSync.lua changes`;
 
 try {
   switch (cmd) {
     case 'mcp': serve(); break;
     case 'paths':
-      print({ handle: myHandle(), wow: wowDir(), saved_variables: savedVariablesFile(), data_addon: dataAddonDir(), shared: sharedDir() });
+      print({ handle: myHandle(), wow: wowDir(), saved_variables: savedVariablesFile(), data_addon: dataAddonDir(), shared: sharedDir(), server: serverUrl() });
       break;
     case 'status': print(q.status(args[0])); break;
     case 'overview': print(q.overview()); break;
@@ -53,18 +58,53 @@ try {
     case 'remote': print(writeRemote()); break;
     case 'sync': {
       const dir = option('--dir');
+      const server = option('--server');
       const handle = option('--handle');
-      if (dir || handle) saveConfig({ ...(dir && { shared: dir }), ...(handle && { handle }) });
-      if (handle) process.env.WFSYNC_HANDLE = handle;
-      const once = () => {
-        try { print(sync()); } catch (e) { console.error(`wfsync: ${e.message}`); process.exitCode = 1; }
-      };
-      once();
-      if (flag('--watch')) {
-        // WoW writes WFSync.lua on logout or /reload; others' files may change any time.
-        fs.watchFile(savedVariablesFile(), { interval: 2000 }, (cur, prev) => cur.mtimeMs !== prev.mtimeMs && once());
-        setInterval(once, 5 * 60 * 1000);
+      if (dir && server) throw new Error('use either --dir or --server');
+      if (server) checkServer(server);
+      // The last of --dir / --server given decides where sync goes.
+      if (dir || server || handle) {
+        saveConfig({ ...(dir && { shared: dir, server: undefined }), ...(server && { server, shared: undefined }), ...(handle && { handle }) });
       }
+      if (handle) process.env.WFSYNC_HANDLE = handle;
+      let stop = () => {};
+      let running = false;
+      const once = async () => {
+        if (running) return;
+        running = true;
+        try {
+          print(serverUrl() ? await syncServer() : sync());
+        } catch (e) {
+          console.error(`wfsync: ${e.message}`);
+          process.exitCode = 1;
+          if (e instanceof AuthError) stop();
+        } finally {
+          running = false;
+        }
+      };
+      await once();
+      if (flag('--watch') && process.exitCode !== 1) {
+        // WoW writes WFSync.lua on logout or /reload; others' state may change any time.
+        const file = savedVariablesFile();
+        fs.watchFile(file, { interval: 2000 }, (cur, prev) => cur.mtimeMs !== prev.mtimeMs && once());
+        const timer = setInterval(once, 5 * 60 * 1000);
+        stop = () => { fs.unwatchFile(file); clearInterval(timer); };
+      }
+      break;
+    }
+    case 'token': {
+      const t = fs.readFileSync(0, 'utf8').trim();
+      if (!/^\S{8,}$/.test(t)) throw new Error('paste the token (one line, no spaces) on stdin');
+      saveConfig({ token: t });
+      print('token saved');
+      break;
+    }
+    case 'share': {
+      const [what, on] = args;
+      if (!['gold', 'pos'].includes(what) || !['on', 'off'].includes(on)) throw new Error('usage: wfsync share gold|pos on|off');
+      const share = { ...loadConfig().share, [what]: on === 'on' };
+      saveConfig({ share });
+      print({ share });
       break;
     }
     case 'watch': {

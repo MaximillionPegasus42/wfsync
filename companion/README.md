@@ -48,6 +48,23 @@ The same rules hold for every path a state takes (room, shared folder, add-on): 
 
 The files are plain JSON with character, realm, guild, gold and position. Nothing is encrypted or signed: anyone who can write the folder can change anyone's file. Use a folder only your group can reach.
 
+### Through the web app: `wfsync sync --server`
+
+Same exchange, with lois's web app instead of a folder. lois creates your token on the server and gives it to you privately. Then, once:
+
+```bash
+node bin/wfsync.js token            # paste the token, Return, then Ctrl-D (Ctrl-Z Return on Windows)
+node bin/wfsync.js sync --server https://wfsync.example.org --handle mf
+```
+
+The token is kept only in `~/.wfsync/config.json` (readable by you only), never on the command line or in the output. Each run sends your state (`POST /api/v1/sync`) when it changed and otherwise only pulls (`GET /api/v1/players`), then rewrites `Remote.lua`. The double-click files and `--watch` work the same way. `--server` and `--dir` replace each other.
+
+- Gold and position stay on your machine until you run `wfsync share gold on` / `wfsync share pos on`.
+- 429: waits for `Retry-After`. 400/413: logs the server's error code and sends that state again only after it changed. 401/403: stops (`--watch` too) and asks you to check the token.
+- Only `https://` URLs are accepted, `http://` just for `localhost`.
+
+The API contract is in `test/fixtures/web/` (one JSON file per case); the web app's tests use the same files.
+
 ## MCP tools
 
 `get_status`, `recent_events` (type `quest_turnin` = recent quests), `completed_quest_ids`, `session_log`, `quest_status`, `group_overview`, `suggest`, `make_snapshot`, `ingest_snapshots`, `write_remote`.

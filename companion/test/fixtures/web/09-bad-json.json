@@ -1,0 +1,22 @@
+{
+ "name": "09-bad-json",
+ "note": "rawBody: send this text as the body.",
+ "given": {
+  "now": 1793001000
+ },
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/sync",
+  "headers": {
+   "authorization": "Bearer tok-mf",
+   "content-type": "application/json"
+  },
+  "rawBody": "{nope"
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "bad_json"
+  }
+ }
+}

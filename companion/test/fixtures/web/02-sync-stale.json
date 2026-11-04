@@ -1,0 +1,83 @@
+{
+ "name": "02-sync-stale",
+ "note": "An older upload does not replace the stored status, its completed quests are still added.",
+ "given": {
+  "now": 1793001000,
+  "players": {
+   "mf": {
+    "v": 1,
+    "handle": "mf",
+    "full": true,
+    "char": "Zitzenmelkee-Spineshatter",
+    "updated": 1793000900,
+    "class": "WARRIOR",
+    "race": "Orc",
+    "faction": "Horde",
+    "level": 24,
+    "xp": 4120,
+    "xpMax": 9800,
+    "zone": "Ashenvale",
+    "subzone": "Astranaar",
+    "log": {
+     "1250": {
+      "title": "Bounty"
+     }
+    },
+    "recent": [],
+    "completed": [
+     100,
+     102
+    ]
+   }
+  }
+ },
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/sync",
+  "headers": {
+   "authorization": "Bearer tok-mf",
+   "content-type": "application/json"
+  },
+  "body": {
+   "v": 1,
+   "handle": "mf",
+   "full": true,
+   "char": "Zitzenmelkee-Spineshatter",
+   "updated": 1793000000,
+   "class": "WARRIOR",
+   "race": "Orc",
+   "faction": "Horde",
+   "level": 23,
+   "xp": 4120,
+   "xpMax": 9800,
+   "zone": "Ashenvale",
+   "subzone": "Astranaar",
+   "log": {
+    "1250": {
+     "title": "Bounty"
+    }
+   },
+   "recent": [],
+   "completed": [
+    100,
+    101
+   ]
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "players": {
+    "mf": {
+     "level": 24,
+     "updated": 1793000900,
+     "completed": [
+      100,
+      101,
+      102
+     ]
+    }
+   }
+  }
+ }
+}

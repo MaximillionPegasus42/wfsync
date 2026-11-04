@@ -1,0 +1,50 @@
+{
+ "name": "06-rate-limited",
+ "note": "Retry-After is the seconds left until the next request is allowed (about 1 per 10 s per token).",
+ "given": {
+  "now": 1793001000,
+  "lastRequestAgo": 2
+ },
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/sync",
+  "headers": {
+   "authorization": "Bearer tok-mf",
+   "content-type": "application/json"
+  },
+  "body": {
+   "v": 1,
+   "handle": "mf",
+   "full": true,
+   "char": "Zitzenmelkee-Spineshatter",
+   "updated": 1793000000,
+   "class": "WARRIOR",
+   "race": "Orc",
+   "faction": "Horde",
+   "level": 23,
+   "xp": 4120,
+   "xpMax": 9800,
+   "zone": "Ashenvale",
+   "subzone": "Astranaar",
+   "log": {
+    "1250": {
+     "title": "Bounty"
+    }
+   },
+   "recent": [],
+   "completed": [
+    100,
+    101
+   ]
+  }
+ },
+ "response": {
+  "status": 429,
+  "headers": {
+   "retry-after": "8"
+  },
+  "body": {
+   "error": "rate_limited"
+  }
+ }
+}

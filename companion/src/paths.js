@@ -9,6 +9,7 @@ import path from 'node:path';
 //   WFSYNC_HOME      companion state dir (default ~/.wfsync)
 //   WFSYNC_HANDLE    this player's r00ms person handle, e.g. mf
 //   WFSYNC_SHARED    folder for `wfsync sync` (also saved in ~/.wfsync/config.json)
+//   WFSYNC_SERVER    web app for `wfsync sync` (same), WFSYNC_TOKEN its token
 // Without WFSYNC_WOW_DIR / WFSYNC_ACCOUNT we pick the flavor + account whose
 // SavedVariables/WFSync.lua was written most recently, falling back to the
 // newest account of the first flavor found. WoW Forever's launch folder name is
@@ -101,7 +102,9 @@ const configFile = () => path.join(stateDir(), 'config.json');
 export const loadConfig = () => (fs.existsSync(configFile()) ? JSON.parse(fs.readFileSync(configFile(), 'utf8')) : {});
 export function saveConfig(patch) {
   const c = { ...loadConfig(), ...patch };
-  fs.writeFileSync(configFile(), JSON.stringify(c, null, 1));
+  // Holds the web token: readable by this user only.
+  fs.writeFileSync(configFile(), JSON.stringify(c, null, 1), { mode: 0o600 });
+  fs.chmodSync(configFile(), 0o600);
   return c;
 }
 

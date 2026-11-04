@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { parseSavedVariables, toLua } from '../src/lua.js';
 
 const BIN = new URL('../bin/wfsync.js', import.meta.url).pathname;
@@ -292,4 +292,122 @@ test('suggest leaves out the other faction and stale players', () => {
   assert.deepEqual(s.together, []);
   assert.deepEqual(s.nearby, []);
   assert.deepEqual(s.dungeons.party, ['mf']);
+});
+
+// ---------- web app (sync --server) against the contract fixtures ----------
+
+const FIXTURES = new URL('./fixtures/web/', import.meta.url).pathname;
+const fixture = name => JSON.parse(fs.readFileSync(path.join(FIXTURES, `${name}.json`), 'utf8'));
+
+// Answers each request with the next fixture's response and records what came in.
+async function fakeServer(...names) {
+  const { createServer } = await import('node:http');
+  const queue = names.map(fixture);
+  const seen = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      seen.push({ method: req.method, path: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
+      const f = queue.shift();
+      if (!f) { res.writeHead(500); res.end(); return; }
+      res.writeHead(f.response.status, { 'content-type': 'application/json', ...f.response.headers });
+      res.end(JSON.stringify(f.response.body));
+    });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${server.address().port}`, seen, close: () => server.close() };
+}
+
+function webSetup(handle) {
+  const s = setup(handle);
+  const env = { ...process.env, WFSYNC_WOW_DIR: s.wow, WFSYNC_HOME: path.join(path.dirname(s.wow), 'state'), WFSYNC_HANDLE: handle };
+  // Async, so the fake server in this process can answer.
+  const run = args => new Promise(resolve => execFile('node', [BIN, ...args], { env }, (err, stdout, stderr) => {
+    const code = err ? err.code ?? 1 : 0;
+    resolve({ code, stdout, stderr, json: code === 0 && stdout ? JSON.parse(stdout) : null });
+  }));
+  return { ...s, run, runSync: s.run };
+}
+
+test('sync --server: uploads own state without gold/position, applies everyone', async () => {
+  const srv = await fakeServer('01-sync-ok', '11-players');
+  try {
+    const mf = webSetup('mf');
+    fs.writeFileSync(mf.svFile, fixtureDb());
+    mf.runSync(['token'], 'tok-mf-0123\n');
+    const a = await mf.run(['sync', '--server', srv.url]);
+    assert.equal(a.code, 0, a.stderr);
+    assert.equal(a.json.own, 'sent');
+    assert.deepEqual(a.json.players.map(p => [p.handle, p.status, p.level]), [['lois', 'updated', 30]]);
+
+    const req = srv.seen[0];
+    const want = fixture('01-sync-ok').request;
+    assert.equal(req.method, want.method);
+    assert.equal(req.path, want.path);
+    assert.equal(req.auth, 'Bearer tok-mf-0123');
+    for (const k of ['v', 'handle', 'full', 'char', 'updated', 'level', 'completed']) assert.deepEqual(req.body[k], want.body[k], k);
+    for (const k of ['money', 'pos', 'mapID']) assert.equal(k in req.body, false, `${k} is opt-in`);
+    assert.match(fs.readFileSync(path.join(mf.wow, 'Interface', 'AddOns', 'WFSync_Data', 'Remote.lua'), 'utf8'), /\tlois = \{/);
+
+    // Unchanged: only pulls. The token never shows in the output.
+    const b = await mf.run(['sync']);
+    assert.equal(b.json.own, 'unchanged');
+    assert.equal(srv.seen[1].method, 'GET');
+    assert.doesNotMatch(a.stdout + b.stdout, /tok-mf/);
+    const cfg = path.join(path.dirname(mf.wow), 'state', 'config.json');
+    assert.equal(fs.statSync(cfg).mode & 0o777, 0o600);
+  } finally { srv.close(); }
+});
+
+test('sync --server: gold and position only after share on', async () => {
+  const srv = await fakeServer('01-sync-ok');
+  try {
+    const mf = webSetup('mf');
+    fs.writeFileSync(mf.svFile, fixtureDb());
+    mf.runSync(['token'], 'tok-mf-0123\n');
+    mf.runSync(['share', 'gold', 'on']);
+    await mf.run(['sync', '--server', srv.url]);
+    assert.equal(srv.seen[0].body.money, 154321);
+    assert.equal('pos' in srv.seen[0].body, false);
+  } finally { srv.close(); }
+});
+
+test('sync --server: 429 waits for Retry-After, 400 is not resent, 401 stops', async () => {
+  const srv = await fakeServer('06-rate-limited', '08-updated-in-future', '11-players', '11-players', '05-bad-token');
+  try {
+    const mf = webSetup('mf');
+    fs.writeFileSync(mf.svFile, fixtureDb());
+    mf.runSync(['token'], 'tok-mf-0123\n');
+    const a = await mf.run(['sync', '--server', srv.url]);
+    assert.match(a.json.own, /rate limited for 8 s/);
+    const b = await mf.run(['sync']);
+    assert.match(b.json.own, /rate limited until/);
+    assert.equal(srv.seen.length, 1, 'no request while rate limited');
+
+    // Pretend the wait is over.
+    const web = path.join(path.dirname(mf.wow), 'state', 'web.json');
+    fs.writeFileSync(web, JSON.stringify({ ...JSON.parse(fs.readFileSync(web, 'utf8')), retryAt: 0 }));
+    const c = await mf.run(['sync']);
+    assert.equal(c.json.own, 'rejected 400: updated_in_future');
+    assert.deepEqual(srv.seen.map(r => r.method), ['POST', 'POST', 'GET'], 'pulls after a rejected upload');
+    const d = await mf.run(['sync']);
+    assert.equal(d.json.own, 'unchanged (rejected before)');
+    assert.equal(srv.seen.at(-1).method, 'GET');
+
+    // New state: sent again. Here the server says the token is wrong.
+    fs.writeFileSync(mf.svFile, fixtureDb({ level: 24 }));
+    const e = await mf.run(['sync']);
+    assert.equal(e.code, 1);
+    assert.match(e.stderr, /401 \(unauthorized\); check your token/);
+  } finally { srv.close(); }
+});
+
+test('sync --server refuses http outside localhost and runs without a token only with a hint', async () => {
+  const mf = webSetup('mf');
+  fs.writeFileSync(mf.svFile, fixtureDb());
+  const a = await mf.run(['sync', '--server', 'http://example.com']);
+  assert.match(a.stderr, /use https/);
+  const b = await mf.run(['sync', '--server', 'https://example.com']);
+  assert.match(b.stderr, /no token; run `wfsync token`/);
 });

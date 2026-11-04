@@ -1,0 +1,39 @@
+{
+ "name": "03-handle-mismatch",
+ "given": {
+  "now": 1793001000
+ },
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/sync",
+  "headers": {
+   "authorization": "Bearer tok-mf",
+   "content-type": "application/json"
+  },
+  "body": {
+   "v": 1,
+   "handle": "lois",
+   "full": true,
+   "char": "Kuncy-Spineshatter",
+   "updated": 1793000500,
+   "class": "MAGE",
+   "race": "Undead",
+   "faction": "Horde",
+   "level": 30,
+   "xp": 100,
+   "xpMax": 20000,
+   "zone": "The Barrens",
+   "log": {},
+   "recent": [],
+   "completed": [
+    200
+   ]
+  }
+ },
+ "response": {
+  "status": 403,
+  "body": {
+   "error": "handle_mismatch"
+  }
+ }
+}

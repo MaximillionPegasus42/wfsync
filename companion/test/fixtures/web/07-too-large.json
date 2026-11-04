@@ -1,0 +1,22 @@
+{
+ "name": "07-too-large",
+ "note": "bodyBytes: send a JSON body padded to this size instead of body.",
+ "given": {
+  "now": 1793001000
+ },
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/sync",
+  "headers": {
+   "authorization": "Bearer tok-mf",
+   "content-type": "application/json"
+  },
+  "bodyBytes": 600000
+ },
+ "response": {
+  "status": 413,
+  "body": {
+   "error": "too_large"
+  }
+ }
+}

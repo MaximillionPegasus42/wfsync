@@ -1,0 +1,19 @@
+{
+ "name": "05-bad-token",
+ "given": {
+  "now": 1793001000
+ },
+ "request": {
+  "method": "GET",
+  "path": "/api/v1/players",
+  "headers": {
+   "authorization": "Bearer tok-nope"
+  }
+ },
+ "response": {
+  "status": 401,
+  "body": {
+   "error": "unauthorized"
+  }
+ }
+}

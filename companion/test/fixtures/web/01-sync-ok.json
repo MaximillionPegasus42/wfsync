@@ -1,0 +1,111 @@
+{
+ "name": "01-sync-ok",
+ "given": {
+  "now": 1793001000,
+  "players": {
+   "lois": {
+    "v": 1,
+    "handle": "lois",
+    "full": true,
+    "char": "Kuncy-Spineshatter",
+    "updated": 1793000500,
+    "class": "MAGE",
+    "race": "Undead",
+    "faction": "Horde",
+    "level": 30,
+    "xp": 100,
+    "xpMax": 20000,
+    "zone": "The Barrens",
+    "log": {},
+    "recent": [],
+    "completed": [
+     200
+    ]
+   }
+  }
+ },
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/sync",
+  "headers": {
+   "authorization": "Bearer tok-mf",
+   "content-type": "application/json"
+  },
+  "body": {
+   "v": 1,
+   "handle": "mf",
+   "full": true,
+   "char": "Zitzenmelkee-Spineshatter",
+   "updated": 1793000000,
+   "class": "WARRIOR",
+   "race": "Orc",
+   "faction": "Horde",
+   "level": 23,
+   "xp": 4120,
+   "xpMax": 9800,
+   "zone": "Ashenvale",
+   "subzone": "Astranaar",
+   "log": {
+    "1250": {
+     "title": "Bounty"
+    }
+   },
+   "recent": [],
+   "completed": [
+    100,
+    101
+   ]
+  }
+ },
+ "response": {
+  "status": 200,
+  "body": {
+   "players": {
+    "mf": {
+     "v": 1,
+     "handle": "mf",
+     "full": true,
+     "char": "Zitzenmelkee-Spineshatter",
+     "updated": 1793000000,
+     "class": "WARRIOR",
+     "race": "Orc",
+     "faction": "Horde",
+     "level": 23,
+     "xp": 4120,
+     "xpMax": 9800,
+     "zone": "Ashenvale",
+     "subzone": "Astranaar",
+     "log": {
+      "1250": {
+       "title": "Bounty"
+      }
+     },
+     "recent": [],
+     "completed": [
+      100,
+      101
+     ]
+    },
+    "lois": {
+     "v": 1,
+     "handle": "lois",
+     "full": true,
+     "char": "Kuncy-Spineshatter",
+     "updated": 1793000500,
+     "class": "MAGE",
+     "race": "Undead",
+     "faction": "Horde",
+     "level": 30,
+     "xp": 100,
+     "xpMax": 20000,
+     "zone": "The Barrens",
+     "log": {},
+     "recent": [],
+     "completed": [
+      200
+     ]
+    }
+   }
+  }
+ }
+}

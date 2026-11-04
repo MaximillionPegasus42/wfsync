@@ -1,0 +1,45 @@
+{
+ "name": "08-updated-in-future",
+ "given": {
+  "now": 1793001000
+ },
+ "request": {
+  "method": "POST",
+  "path": "/api/v1/sync",
+  "headers": {
+   "authorization": "Bearer tok-mf",
+   "content-type": "application/json"
+  },
+  "body": {
+   "v": 1,
+   "handle": "mf",
+   "full": true,
+   "char": "Zitzenmelkee-Spineshatter",
+   "updated": 1793008200,
+   "class": "WARRIOR",
+   "race": "Orc",
+   "faction": "Horde",
+   "level": 23,
+   "xp": 4120,
+   "xpMax": 9800,
+   "zone": "Ashenvale",
+   "subzone": "Astranaar",
+   "log": {
+    "1250": {
+     "title": "Bounty"
+    }
+   },
+   "recent": [],
+   "completed": [
+    100,
+    101
+   ]
+  }
+ },
+ "response": {
+  "status": 400,
+  "body": {
+   "error": "updated_in_future"
+  }
+ }
+}
