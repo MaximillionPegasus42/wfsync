@@ -7,6 +7,7 @@ import path from 'node:path';
 //   WFSYNC_ACCOUNT   WTF account folder name
 //   WFSYNC_HOME      companion state dir (default ~/.wfsync)
 //   WFSYNC_HANDLE    this player's r00ms person handle, e.g. mf
+//   WFSYNC_SHARED    folder for `wfsync sync` (also saved in ~/.wfsync/config.json)
 // Without WFSYNC_WOW_DIR / WFSYNC_ACCOUNT we pick the flavor + account whose
 // SavedVariables/WFSync.lua was written most recently, falling back to the
 // newest account of the first flavor found.
@@ -88,6 +89,19 @@ export function stateDir() {
   return dir;
 }
 
+// Settings `wfsync sync --dir/--handle` saves for later runs (and double-click).
+const configFile = () => path.join(stateDir(), 'config.json');
+export const loadConfig = () => (fs.existsSync(configFile()) ? JSON.parse(fs.readFileSync(configFile(), 'utf8')) : {});
+export function saveConfig(patch) {
+  const c = { ...loadConfig(), ...patch };
+  fs.writeFileSync(configFile(), JSON.stringify(c, null, 1));
+  return c;
+}
+
 export function myHandle() {
-  return process.env.WFSYNC_HANDLE || os.userInfo().username;
+  return process.env.WFSYNC_HANDLE || loadConfig().handle || os.userInfo().username;
+}
+
+export function sharedDir() {
+  return process.env.WFSYNC_SHARED || loadConfig().shared || null;
 }

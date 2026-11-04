@@ -94,11 +94,34 @@ export function makeSnapshot({ full = false, commit = true, charName } = {}) {
   return { changed, full: sendFull, seq, text };
 }
 
+// Full state of this player, the same JSON as a full room snapshot (without seq).
+export function ownBody(charName) {
+  const c = myChar(readDb(), charName);
+  return { v: SCHEMA, handle: myHandle(), full: true, ...entryOf(c), completed: completedIds(c) };
+}
+
 // ---------- other players (from the room) ----------
 
 const playersFile = () => path.join(stateDir(), 'players.json');
 export const loadPlayers = () => (fs.existsSync(playersFile()) ? JSON.parse(fs.readFileSync(playersFile(), 'utf8')) : {});
-const savePlayers = p => writeAtomic(playersFile(), JSON.stringify(p, null, 1));
+export const savePlayers = p => writeAtomic(playersFile(), JSON.stringify(p, null, 1));
+
+// Folds one state of `handle` into `players`, whatever path it came by: the entry
+// with the newest `updated` (set by that player's own client) wins, completed quests
+// add up (a turned-in quest stays turned in). seq stays the room's.
+export function mergePlayer(players, handle, { entry, completed = [], seq, source }) {
+  const prev = players[handle];
+  const newer = !prev || (entry.updated ?? 0) >= (prev.entry.updated ?? 0);
+  const done = new Set([...(prev?.completed ?? []), ...completed]);
+  players[handle] = {
+    seq: seq ?? prev?.seq ?? 0,
+    entry: newer ? entry : prev.entry,
+    completed: [...done].sort((a, b) => a - b),
+    updated: Date.now(),
+    source: newer ? source : prev.source,
+  };
+  return newer;
+}
 
 export function extractSnapshots(text) {
   const out = [];
@@ -132,7 +155,7 @@ export function ingest(text, { author, writeRemote: write = true } = {}) {
     const prev = players[s.handle];
     const { v, handle, seq, full, completed, completed_add, ...entry } = s;
     if (full) {
-      players[handle] = { seq, entry, completed: [...new Set(completed ?? [])].sort((a, b) => a - b), updated: Date.now() };
+      mergePlayer(players, handle, { entry, completed, seq, source: 'room' });
       results.push({ handle, status: 'full', seq });
     } else if (!prev) {
       results.push({ handle, status: 'need_full', why: 'no full snapshot yet' });
@@ -141,9 +164,7 @@ export function ingest(text, { author, writeRemote: write = true } = {}) {
     } else if (seq !== prev.seq + 1) {
       results.push({ handle, status: 'need_full', why: `seq gap ${prev.seq} -> ${seq}` });
     } else {
-      const done = new Set(prev.completed);
-      for (const id of completed_add ?? []) done.add(id);
-      players[handle] = { seq, entry, completed: [...done].sort((a, b) => a - b), updated: Date.now() };
+      mergePlayer(players, handle, { entry, completed: completed_add, seq, source: 'room' });
       results.push({ handle, status: 'delta', seq, added: (completed_add ?? []).length });
     }
   }
@@ -185,7 +206,7 @@ export function writeRemote(players = loadPlayers()) {
   return file;
 }
 
-function writeAtomic(file, data) {
+export function writeAtomic(file, data) {
   const tmp = `${file}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, data);
   fs.renameSync(tmp, file);
