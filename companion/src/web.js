@@ -96,7 +96,11 @@ export async function syncServer({ server = serverUrl(), write = true, now = Dat
   saveState(state);
 
   if (res.status === 401 || res.status === 403) {
-    throw new AuthError(`server answered ${res.status} (${res.body?.error ?? 'no error code'}); check your token and handle`);
+    const code = res.body?.error ?? 'no error code';
+    const hint = code === 'char_owned'
+      ? 'this character already belongs to another handle on the server; ask lois'
+      : 'check your token and handle';
+    throw new AuthError(`server answered ${res.status} (${code}); ${hint}`);
   }
   if (res.status === 429) {
     state.retryAt = now + 1000 * DEFAULT_RETRY;
@@ -117,7 +121,8 @@ export async function syncServer({ server = serverUrl(), write = true, now = Dat
       r.status = 'ignored';
       r.why = 'not a WFSync v1 entry for this handle';
     } else {
-      const { v, handle: _, seq, full, completed, completed_add, ...entry } = body;
+      // `received` is the server's own bookkeeping, not part of the player's state.
+      const { v, handle: _, seq, full, completed, completed_add, received, ...entry } = body;
       r.status = mergePlayer(players, h2, { entry, completed: Array.isArray(completed) ? completed : [], source: 'server' })
         ? 'updated' : 'kept newer';
       r.char = entry.char;

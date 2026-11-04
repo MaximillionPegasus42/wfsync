@@ -348,7 +348,9 @@ test('sync --server: uploads own state without gold/position, applies everyone',
     assert.equal(req.auth, 'Bearer tok-mf-0123');
     for (const k of ['v', 'handle', 'full', 'char', 'updated', 'level', 'completed']) assert.deepEqual(req.body[k], want.body[k], k);
     for (const k of ['money', 'pos', 'mapID']) assert.equal(k in req.body, false, `${k} is opt-in`);
-    assert.match(fs.readFileSync(path.join(mf.wow, 'Interface', 'AddOns', 'WFSync_Data', 'Remote.lua'), 'utf8'), /\tlois = \{/);
+    const remote = fs.readFileSync(path.join(mf.wow, 'Interface', 'AddOns', 'WFSync_Data', 'Remote.lua'), 'utf8');
+    assert.match(remote, /\tlois = \{/);
+    assert.doesNotMatch(remote, /received/, 'server bookkeeping stays out');
 
     // Unchanged: only pulls. The token never shows in the output.
     const b = await mf.run(['sync']);
